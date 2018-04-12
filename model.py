@@ -4,6 +4,7 @@ import pandas as pd
 from pathlib import Path
 import typing as t
 from tensorflow.contrib.data import sliding_window_batch
+import itertools
 
 
 tf.logging.set_verbosity(tf.logging.DEBUG)
@@ -28,6 +29,14 @@ def token_generator(text_filename: Path, line_breaker:t.Callable[[str],t.List[st
             yield token
         line = fh.readline()
     return None
+
+def join_tensor(tokens_t: tf.Tensor) -> tf.Tensor:
+    "Joins all string in a tokens tensor and returns a scalar tensor with a joined string"
+    def join(tokens_np: np.array) -> np.array:
+        ba = b''.join(tokens_np)
+        return np.array(ba)
+    
+    return tf.py_func(join,[tokens_t],tf.string, stateful=False)
 
 def input_fn(
         token_generator: t.Callable[[],t.Generator[str,None,None]], 
@@ -93,7 +102,7 @@ def poems_moden_fn(
     char_map_t = tf.contrib.lookup.HashTable(
         initializer = tf.contrib.lookup.KeyValueTensorInitializer(
             char_list_t,
-            tf.range(1,len(char_list)+1, dtype = tf.int32)),
+            tf.range(0,len(char_list), dtype = tf.int32)),
         default_value = 0
         )
 
@@ -101,7 +110,9 @@ def poems_moden_fn(
 
     loss = tf.losses.sparse_softmax_cross_entropy(labels=label_ids, logits=logits_t)
     accuracy, accuracy_op = tf.metrics.accuracy(labels=labels, predictions = predicted_tokens, name='acc_op')
-
+    tf.summary.scalar("accuracy", accuracy_op)
+    tf.summary.scalar("perplexity", tf.exp(loss))
+    tf.summary.text("Predicted_tokens", join_tensor(predicted_tokens))
 
     if mode == tf.estimator.ModeKeys.EVAL:
         return tf.estimator.EstimatorSpec(
@@ -152,17 +163,32 @@ def create_estimator(hyper_params: dict)-> tf.estimator.Estimator:
 
 
 hyper_params = {
-        "embedding_dimention": 5,
-        "seq_len": 32,
-        "LSTM1_size": 32,
+        "embedding_dimention": 10,
+        "seq_len": 64,
+        "LSTM1_size": 1000,
         "learning_rate": 0.1,
     }
 
 def char_gen():
     return token_generator(Path('train_data/Pushkin.txt'), char_line_breaker)
 
+def char_gen_t1():
+    return itertools.chain.from_iterable(itertools.repeat(list("abcdefghijklmno"),10000))
+
+def char_gen_t2():
+    return itertools.chain.from_iterable(itertools.repeat(list("pqrst"),10))
+
+
+
 estimator = create_estimator(hyper_params)
 estimator.train(lambda: input_fn(char_gen, hyper_params))
 
+def generate_text(seed_text: str):
+    def char_gen_t3():
+        return list(seed_text)
 
-
+    pred_gen = list(estimator.predict(lambda: input_fn(char_gen_t3, hyper_params)))
+    pred = list(pred_gen)
+    predicted_tokens = [p['predicted_tokens'] for p in pred]
+    predicted_token_ids = [p['class_ids'] for p in pred]
+    return b''.join(predicted_tokens).decode()

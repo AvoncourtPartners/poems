@@ -65,13 +65,16 @@ def poems_moden_fn(
 
     input_t = tf.feature_column.input_layer(features,params['feature_columns'])
     input_r_t = tf.expand_dims(input_t,0) # Add dimention to create a batch_size of 1 for dynamic_rnn
-    layer1_cell = tf.contrib.rnn.BasicLSTMCell(hyper_params['LSTM1_size'], state_is_tuple = False)
+
+    rnn_sublayer_cells = [tf.contrib.rnn.BasicLSTMCell(size, state_is_tuple = False)for size in hyper_params['LSTM1_size']]
+    rnn_cell = tf.contrib.rnn.MultiRNNCell(rnn_sublayer_cells, state_is_tuple=False)
+    
     layer1_prev_state = tf.Variable(
-        initial_value = layer1_cell.zero_state(1,dtype=tf.float32),
+        initial_value = rnn_cell.zero_state(1,dtype=tf.float32),
         trainable=False
     )
 
-    layer1_out_t, layer1_state_t = tf.nn.dynamic_rnn(layer1_cell, input_r_t, sequence_length=[hyper_params['seq_len']], initial_state=layer1_prev_state)
+    layer1_out_t, layer1_state_t = tf.nn.dynamic_rnn(rnn_cell, input_r_t, sequence_length=[hyper_params['seq_len']], initial_state=layer1_prev_state)
     
     state_update_op = layer1_prev_state.assign(layer1_state_t)
     with tf.control_dependencies([state_update_op]):
@@ -127,7 +130,7 @@ def poems_moden_fn(
     # TRAIN
     ####################################################################################
 
-    optimizer = tf.train.AdagradOptimizer(learning_rate=hyper_params['learning_rate'])
+    optimizer = tf.train.AdagradOptimizer(learning_rate=0.1)
     train_op = optimizer.minimize(loss, global_step=tf.train.get_global_step())
 
     if mode == tf.estimator.ModeKeys.TRAIN:
@@ -139,7 +142,13 @@ def poems_moden_fn(
 
 
 def log_dir_name(hyper_params: dict)->str:
-    params = [key + "_" + str(hyper_params[key]) for key in hyper_params]
+    def val_to_str(val):
+        if type(val) == list:
+            return "_".join(map(str,val))
+        else:
+            return str(val)
+
+    params = [key + "_" + val_to_str(hyper_params[key]) for key in hyper_params]
     timestamp = pd.Timestamp.now()
     timestamp_str = "ts" # str(int(timestamp.timestamp()))
     return "-".join(params) + "/" + timestamp_str
@@ -167,8 +176,7 @@ def create_estimator(hyper_params: dict)-> tf.estimator.Estimator:
 hyper_params = {
         "embedding_dimention": 5,
         "seq_len": 64,
-        "LSTM1_size": 50,
-        "learning_rate": 0.1,
+        "LSTM1_size": [20,10,5]
     }
 
 def char_gen():
@@ -192,7 +200,7 @@ def evaluate():
 
 
 def generate_text(seed_text: str, num_tokens: int):
-    "Generates num_tockens chars of text after initizlising the LSTMs with the seed_text string"
+    "Generates num_tockens chars of text after initializing the LSTMs with the seed_text string"
     composed_list: t.List[str] = []
     processed_seed: t.List[str] = []
 

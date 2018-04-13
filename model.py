@@ -109,8 +109,9 @@ def poems_moden_fn(
 
     loss = tf.losses.sparse_softmax_cross_entropy(labels=label_ids, logits=logits_t)
     accuracy, accuracy_op = tf.metrics.accuracy(labels=labels, predictions = predicted_tokens, name='acc_op')
+    perplexity = tf.exp(loss)
     tf.summary.scalar("accuracy", accuracy_op)
-    tf.summary.scalar("perplexity", tf.exp(loss))
+    tf.summary.scalar("perplexity", perplexity)
     tf.summary.text("Predicted_tokens", join_tensor(predicted_tokens))
 
     if mode == tf.estimator.ModeKeys.EVAL:
@@ -152,7 +153,8 @@ def create_estimator(hyper_params: dict)-> tf.estimator.Estimator:
         config=tf.estimator.RunConfig(
             save_checkpoints_steps = 1000,
             log_step_count_steps   = 1000,
-            save_summary_steps     = 10
+            save_summary_steps     = 10,
+            keep_checkpoint_max    = 10,
         ),
         params = { 
             "feature_columns" : create_feature_columns(hyper_params),
@@ -181,9 +183,16 @@ def char_gen_t2():
 
 
 estimator = create_estimator(hyper_params)
-estimator.train(lambda: input_fn(char_gen, hyper_params))
+
+def train():
+    return estimator.train(lambda: input_fn(char_gen, hyper_params).skip(1000))
+
+def evaluate():
+    return estimator.evaluate(lambda: input_fn(char_gen, hyper_params).take(1000))
+
 
 def generate_text(seed_text: str, num_tokens: int):
+    "Generates num_tockens chars of text after initizlising the LSTMs with the seed_text string"
     composed_list: t.List[str] = []
     processed_seed: t.List[str] = []
 
@@ -208,4 +217,3 @@ def generate_text(seed_text: str, num_tokens: int):
 
     return (processed_seed_str, composed_str)
 
-generate_text("Привет",10)

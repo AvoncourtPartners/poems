@@ -6,7 +6,6 @@ import typing as t
 from tensorflow.contrib.data import sliding_window_batch
 import itertools
 
-
 tf.logging.set_verbosity(tf.logging.DEBUG)
 
 # Define the character to int mapping
@@ -141,7 +140,8 @@ def poems_moden_fn(
 def log_dir_name(hyper_params: dict)->str:
     params = [key + "_" + str(hyper_params[key]) for key in hyper_params]
     timestamp = pd.Timestamp.now()
-    return "-".join(params) + "/" + str(int(timestamp.timestamp()))
+    timestamp_str = "ts" # str(int(timestamp.timestamp()))
+    return "-".join(params) + "/" + timestamp_str
 
 
 def create_estimator(hyper_params: dict)-> tf.estimator.Estimator:
@@ -163,9 +163,9 @@ def create_estimator(hyper_params: dict)-> tf.estimator.Estimator:
 
 
 hyper_params = {
-        "embedding_dimention": 10,
+        "embedding_dimention": 5,
         "seq_len": 64,
-        "LSTM1_size": 1000,
+        "LSTM1_size": 50,
         "learning_rate": 0.1,
     }
 
@@ -183,12 +183,29 @@ def char_gen_t2():
 estimator = create_estimator(hyper_params)
 estimator.train(lambda: input_fn(char_gen, hyper_params))
 
-def generate_text(seed_text: str):
-    def char_gen_t3():
-        return list(seed_text)
+def generate_text(seed_text: str, num_tokens: int):
+    composed_list: t.List[str] = []
+    processed_seed: t.List[str] = []
 
-    pred_gen = list(estimator.predict(lambda: input_fn(char_gen_t3, hyper_params)))
-    pred = list(pred_gen)
-    predicted_tokens = [p['predicted_tokens'] for p in pred]
-    predicted_token_ids = [p['class_ids'] for p in pred]
-    return b''.join(predicted_tokens).decode()
+    def char_gen_t3():
+        for c in seed_text:
+            yield {"token": [c]}
+
+        for c in composed_list:
+            yield {"token": [c]}
+
+    pred_gen = estimator.predict(lambda: tf.data.Dataset.from_generator(char_gen_t3, output_types={"token": tf.string}))
+    
+    for _ in range(len(seed_text)-1):
+        processed_seed.append(next(pred_gen)['predicted_tokens'])
+
+    processed_seed_str = b''.join(processed_seed).decode()
+
+    for _ in range(num_tokens):
+        composed_list.append(next(pred_gen)['predicted_tokens'])
+
+    composed_str = b''.join(composed_list).decode()
+
+    return (processed_seed_str, composed_str)
+
+generate_text("Привет",10)

@@ -67,7 +67,13 @@ def poems_moden_fn(
     input_t = tf.feature_column.input_layer(features,params['feature_columns'])
     input_r_t = tf.expand_dims(input_t,0) # Add dimention to create a batch_size of 1 for dynamic_rnn
 
-    rnn_sublayer_cells = [tf.nn.rnn_cell.BasicLSTMCell(size, state_is_tuple = False)for size in hyper_params['LSTM1_size']]
+    rnn_sublayer_cells = [
+        tf.nn.rnn_cell.LSTMCell(
+            size, 
+            state_is_tuple = False
+        )
+        for size in hyper_params['LSTM1_size']]
+            
     rnn_sublayer_cells_dropout = [
         tf.nn.rnn_cell.DropoutWrapper(cell, input_keep_prob = 1-hyper_params['dropout']) 
         for cell in rnn_sublayer_cells

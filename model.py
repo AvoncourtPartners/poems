@@ -62,6 +62,7 @@ def poems_moden_fn(
         params: dict
     ) -> tf.estimator.EstimatorSpec:  # Additional configuration
     hyper_params = params['hyper_params']
+    elem_type = tf.float32
 
     input_t = tf.feature_column.input_layer(features,params['feature_columns'])
     input_r_t = tf.expand_dims(input_t,0) # Add dimention to create a batch_size of 1 for dynamic_rnn
@@ -73,19 +74,25 @@ def poems_moden_fn(
     ]
     rnn_cell = tf.nn.rnn_cell.MultiRNNCell(rnn_sublayer_cells_dropout, state_is_tuple=False)
     
-    layer1_prev_state = tf.Variable(
-        initial_value = rnn_cell.zero_state(1,dtype=tf.float32),
+    rnn_prev_state = tf.Variable(
+        initial_value = rnn_cell.zero_state(1, dtype = elem_type),
         trainable=False
     )
 
-    layer1_out_t, layer1_state_t = tf.nn.dynamic_rnn(rnn_cell, input_r_t, sequence_length=[hyper_params['seq_len']], initial_state=layer1_prev_state)
+    layer1_out_t, rnn_state_t = tf.nn.dynamic_rnn(
+        rnn_cell, 
+        input_r_t, 
+        sequence_length=[hyper_params['seq_len']], 
+        initial_state=rnn_prev_state,
+        dtype = elem_type
+    )
     
-    state_update_op = layer1_prev_state.assign(layer1_state_t)
+    state_update_op = rnn_prev_state.assign(rnn_state_t)
     with tf.control_dependencies([state_update_op]):
         logits_t = tf.layers.dense(layer1_out_t[0], len(char_list))
     
     predicted_token_ids = tf.argmax(logits_t,1)
-    char_list_t = tf.constant(char_list, dtype=tf.string)
+    char_list_t = tf.constant(char_list, dtype = tf.string)
     predicted_tokens    = tf.gather(char_list_t, predicted_token_ids)
 
     ####################################################################################

@@ -204,7 +204,7 @@ hyper_params = {
     }
 
 poem_config = {
-    "use_gs": False,
+    "use_gs": True,
     "train_set": "geothe",
 }
 
@@ -229,8 +229,7 @@ def char_gen_t2():
 estimator = create_estimator(hyper_params, poem_config)
 
 def train():
-    hook = MetadataHook(save_steps=1000, output_dir=estimator.model_dir)
-    return estimator.train(lambda: input_fn(char_gen, hyper_params).skip(1000), hooks=[hook])
+    return estimator.train(lambda: input_fn(char_gen, hyper_params).skip(1000))
 
 def evaluate():
     return estimator.evaluate(lambda: input_fn(char_gen, hyper_params).take(1000))
@@ -272,45 +271,3 @@ def checkpoint():
     print("Seed text: ", seed_text)
     print("Generated text: ", gen_text)
 
-
-
-class MetadataHook(SessionRunHook):
-    def __init__ (self,
-                  save_steps=None,
-                  save_secs=None,
-                  output_dir=""):
-        self._output_tag = "step-{}"
-        self._output_dir = output_dir
-        self._timer = SecondOrStepTimer(
-            every_secs=save_secs, every_steps=save_steps)
-
-    def begin(self):
-        self._next_step = None
-        self._global_step_tensor = training_util.get_global_step()
-        self._writer = tf.summary.FileWriter (self._output_dir, tf.get_default_graph())
-
-        if self._global_step_tensor is None:
-            raise RuntimeError("Global step should be created to use ProfilerHook.")
-
-    def before_run(self, run_context):
-        self._request_summary = (
-            self._next_step is None or
-            self._timer.should_trigger_for_step(self._next_step)
-        )
-        requests = {"global_step": self._global_step_tensor}
-        opts = (tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
-            if self._request_summary else None)
-        return SessionRunArgs(requests, options=opts)
-
-    def after_run(self, run_context, run_values):
-        stale_global_step = run_values.results["global_step"]
-        global_step = stale_global_step + 1
-        if self._request_summary:
-            global_step = run_context.session.run(self._global_step_tensor)
-            self._writer.add_run_metadata(
-                run_values.run_metadata, self._output_tag.format(global_step))
-            self._writer.flush()
-        self._next_step = global_step + 1
-
-    def end(self, session):
-        self._writer.close()

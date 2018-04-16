@@ -205,7 +205,7 @@ hyper_params = {
     }
 
 poem_config = {
-    "use_gs": False,
+    "use_gs": True,
     "train_set": "geothe",
 }
 
@@ -227,12 +227,14 @@ def char_gen_t2():
 
 
 
-estimator = create_estimator(hyper_params, poem_config)
+
 
 def train():
+    estimator = create_estimator(hyper_params, poem_config)
     return estimator.train(lambda: input_fn(char_gen, hyper_params).skip(1000))
 
 def evaluate():
+    estimator = create_estimator(hyper_params, poem_config)
     return estimator.evaluate(lambda: input_fn(char_gen, hyper_params).take(1000))
 
 
@@ -240,6 +242,8 @@ def generate_text(seed_text: str, num_tokens: int):
     "Generates num_tockens chars of text after initializing the LSTMs with the seed_text string"
     composed_list: t.List[str] = []
     processed_seed: t.List[str] = []
+
+    estimator = create_estimator(hyper_params, poem_config)
 
     def char_gen_t3():
         for c in seed_text:

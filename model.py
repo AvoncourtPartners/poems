@@ -73,7 +73,7 @@ def poems_moden_fn(
             state_is_tuple = False
         )
         for size in hyper_params['LSTM1_size']]
-            
+
     rnn_sublayer_cells_dropout = [
         tf.nn.rnn_cell.DropoutWrapper(cell, input_keep_prob = 1-hyper_params['dropout']) 
         for cell in rnn_sublayer_cells
@@ -158,7 +158,7 @@ def poems_moden_fn(
 
 
 
-def log_dir_name(hyper_params: dict)->str:
+def log_dir_name(hyper_params: dict, google_storage: bool)->str:
     def val_to_str(val):
         if type(val) == list:
             return "_".join(map(str,val))
@@ -168,13 +168,16 @@ def log_dir_name(hyper_params: dict)->str:
     params = [key + "_" + val_to_str(hyper_params[key]) for key in hyper_params]
     timestamp = pd.Timestamp.now()
     timestamp_str = "ts" # str(int(timestamp.timestamp()))
-    return "-".join(params) + "/" + timestamp_str
+    prefix = "gs://checkpt/ml/" if google_storage else "logs/"
+    path = prefix + "-".join(params) + "/" + timestamp_str
+    tf.logging.debug(f"Log dir path: {path}")
+    return path
 
 
 def create_estimator(hyper_params: dict)-> tf.estimator.Estimator:
     estimator = tf.estimator.Estimator(
         model_fn = poems_moden_fn, 
-        model_dir='logs/' + log_dir_name(hyper_params),
+        model_dir=log_dir_name(hyper_params, False),
         
         config=tf.estimator.RunConfig(
             save_checkpoints_steps = 1000,
@@ -193,12 +196,12 @@ def create_estimator(hyper_params: dict)-> tf.estimator.Estimator:
 hyper_params = {
         "embedding_dimention": 5,
         "seq_len": 64,
-        "LSTM1_size": [20,10,5],
+        "LSTM1_size": [300,300],
         "dropout": 0.2
     }
 
 def char_gen():
-    return token_generator(Path('train_data/Pushkin.txt'), char_line_breaker)
+    return token_generator(Path('train_data/Faust_Geothe.txt'), char_line_breaker)
 
 def char_gen_t1():
     return itertools.chain.from_iterable(itertools.repeat(list("abcdefghijklmno"),10000))
@@ -243,3 +246,12 @@ def generate_text(seed_text: str, num_tokens: int):
 
     return (processed_seed_str, composed_str)
 
+def checkpoint():
+    evaluate()
+    seed_text, gen_text = generate_text("""Так и мне узнать случилось,
+		Что за птица Купидон;
+		Сердце страстное пленилось;
+		Признаюсь – и я влюблен!""",100)
+    
+    print("Seed text: ", seed_text)
+    print("Generated text: ", gen_text)

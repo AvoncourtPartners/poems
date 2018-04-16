@@ -198,8 +198,8 @@ def create_estimator(hyper_params: dict, poem_config: dict)-> tf.estimator.Estim
 
 hyper_params = {
         "embedding_dimention": 5,
-        "seq_len": 64,
-        "LSTM1_size": [300,300],
+        "seq_len": 128,
+        "LSTM1_size": [300,300,300],
         "dropout": 0.2
     }
 

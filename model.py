@@ -5,6 +5,9 @@ from pathlib import Path
 import typing as t
 from tensorflow.contrib.data import sliding_window_batch
 import itertools
+from tensorflow.python.training.session_run_hook import SessionRunHook, SessionRunArgs
+from tensorflow.python.training import training_util
+from tensorflow.python.training.basic_session_run_hooks import SecondOrStepTimer
 
 tf.logging.set_verbosity(tf.logging.DEBUG)
 
@@ -158,7 +161,7 @@ def poems_moden_fn(
 
 
 
-def log_dir_name(hyper_params: dict, google_storage: bool)->str:
+def log_dir_name(hyper_params: dict, poem_config: dict)->str:
     def val_to_str(val):
         if type(val) == list:
             return "_".join(map(str,val))
@@ -168,16 +171,16 @@ def log_dir_name(hyper_params: dict, google_storage: bool)->str:
     params = [key + "_" + val_to_str(hyper_params[key]) for key in hyper_params]
     timestamp = pd.Timestamp.now()
     timestamp_str = "ts" # str(int(timestamp.timestamp()))
-    prefix = "gs://checkpt/ml/" if google_storage else "logs/"
-    path = prefix + "-".join(params) + "/" + timestamp_str
+    prefix = "gs://checkpt/ml/" if poem_config['use_gs'] else "logs/"
+    path = prefix + poem_config['train_set'] + "/" + "-".join(params) + "/" + timestamp_str
     tf.logging.debug(f"Log dir path: {path}")
     return path
 
 
-def create_estimator(hyper_params: dict)-> tf.estimator.Estimator:
+def create_estimator(hyper_params: dict, poem_config: dict)-> tf.estimator.Estimator:
     estimator = tf.estimator.Estimator(
         model_fn = poems_moden_fn, 
-        model_dir=log_dir_name(hyper_params, True),
+        model_dir=log_dir_name(hyper_params, poem_config),
         
         config=tf.estimator.RunConfig(
             save_checkpoints_steps = 1000,
@@ -200,8 +203,20 @@ hyper_params = {
         "dropout": 0.2
     }
 
+poem_config = {
+    "use_gs": False,
+    "train_set": "geothe",
+}
+
+train_sets = {
+    "geothe": 'train_data/Faust_Geothe.txt',
+    "pushkin": 'train_data/Pushkin.txt',
+    "nerudo": 'train_data/Pablo_Nerudo.txt',
+    "rilke": 'train_data/Rilke.txt',
+}
+
 def char_gen():
-    return token_generator(Path('train_data/Faust_Geothe.txt'), char_line_breaker)
+    return token_generator(Path(train_sets[poem_config['train_set']]), char_line_breaker)
 
 def char_gen_t1():
     return itertools.chain.from_iterable(itertools.repeat(list("abcdefghijklmno"),10000))
@@ -211,10 +226,11 @@ def char_gen_t2():
 
 
 
-estimator = create_estimator(hyper_params)
+estimator = create_estimator(hyper_params, poem_config)
 
 def train():
-    return estimator.train(lambda: input_fn(char_gen, hyper_params).skip(1000))
+    hook = MetadataHook(save_steps=1000, output_dir=estimator.model_dir)
+    return estimator.train(lambda: input_fn(char_gen, hyper_params).skip(1000), hooks=[hook])
 
 def evaluate():
     return estimator.evaluate(lambda: input_fn(char_gen, hyper_params).take(1000))
@@ -255,3 +271,46 @@ def checkpoint():
     
     print("Seed text: ", seed_text)
     print("Generated text: ", gen_text)
+
+
+
+class MetadataHook(SessionRunHook):
+    def __init__ (self,
+                  save_steps=None,
+                  save_secs=None,
+                  output_dir=""):
+        self._output_tag = "step-{}"
+        self._output_dir = output_dir
+        self._timer = SecondOrStepTimer(
+            every_secs=save_secs, every_steps=save_steps)
+
+    def begin(self):
+        self._next_step = None
+        self._global_step_tensor = training_util.get_global_step()
+        self._writer = tf.summary.FileWriter (self._output_dir, tf.get_default_graph())
+
+        if self._global_step_tensor is None:
+            raise RuntimeError("Global step should be created to use ProfilerHook.")
+
+    def before_run(self, run_context):
+        self._request_summary = (
+            self._next_step is None or
+            self._timer.should_trigger_for_step(self._next_step)
+        )
+        requests = {"global_step": self._global_step_tensor}
+        opts = (tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
+            if self._request_summary else None)
+        return SessionRunArgs(requests, options=opts)
+
+    def after_run(self, run_context, run_values):
+        stale_global_step = run_values.results["global_step"]
+        global_step = stale_global_step + 1
+        if self._request_summary:
+            global_step = run_context.session.run(self._global_step_tensor)
+            self._writer.add_run_metadata(
+                run_values.run_metadata, self._output_tag.format(global_step))
+            self._writer.flush()
+        self._next_step = global_step + 1
+
+    def end(self, session):
+        self._writer.close()

@@ -177,7 +177,7 @@ def log_dir_name(hyper_params: dict, google_storage: bool)->str:
 def create_estimator(hyper_params: dict)-> tf.estimator.Estimator:
     estimator = tf.estimator.Estimator(
         model_fn = poems_moden_fn, 
-        model_dir=log_dir_name(hyper_params, False),
+        model_dir=log_dir_name(hyper_params, True),
         
         config=tf.estimator.RunConfig(
             save_checkpoints_steps = 1000,

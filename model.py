@@ -8,6 +8,7 @@ import itertools
 from tensorflow.python.training.session_run_hook import SessionRunHook, SessionRunArgs
 from tensorflow.python.training import training_util
 from tensorflow.python.training.basic_session_run_hooks import SecondOrStepTimer
+import jsonlines
 
 tf.logging.set_verbosity(tf.logging.DEBUG)
 
@@ -226,6 +227,13 @@ train_sets = {
     "rilke": 'train_data/Rilke.txt',
 }
 
+seed_texts = {
+    "goethe": 'der Sinn des Lebens',
+    "pushkin": 'Жизнь она ведь',
+    "nerudo": 'El significado de la vida',
+    "rilke": 'der Sinn des Lebens',
+}
+
 def char_gen():
     return token_generator(Path(train_sets[poem_config['train_set']]), char_line_breaker)
 
@@ -245,7 +253,13 @@ def evaluate(hyper_params = hyper_params, poem_config = poem_config):
     estimator = create_estimator(hyper_params, poem_config)
     return estimator.evaluate(lambda: input_fn(char_gen, hyper_params).take(1000))
 
-def generate_text(seed_text: str, num_tokens: int, theta = 4.0, seed = None, hyper_params = hyper_params, poem_config = poem_config):
+def generate_text(
+    seed_text: str, 
+    num_tokens: int, 
+    theta = 4.0, 
+    seed = None, 
+    hyper_params = hyper_params, 
+    poem_config = poem_config):
     "Generates num_tockens chars of text after initializing the LSTMs with the seed_text string"
     composed_list: t.List[str] = []
     processed_seed: t.List[bytes] = []
@@ -291,13 +305,29 @@ def generate_text(seed_text: str, num_tokens: int, theta = 4.0, seed = None, hyp
 
     return (processed_seed_str, composed_str, full_res_list)
 
-def checkpoint():
-    evaluate()
-    seed_text, gen_text = generate_text("""Так и мне узнать случилось,
-		Что за птица Купидон;
-		Сердце страстное пленилось;
-		Признаюсь – и я влюблен!""",100)
-    
-    print("Seed text: ", seed_text)
-    print("Generated text: ", gen_text)
+def checkpoint(hyper_params = hyper_params, poem_config = poem_config):
 
+    _, gen_text, _ = generate_text(
+        seed_text = seed_texts[poem_config['train_set']],
+        num_tokens = 1000,
+        hyper_params = hyper_params, 
+        poem_config = poem_config)
+    
+    print("Generated text:")
+    print(gen_text.replace(char_list[0],"\t"))
+
+    estimator = create_estimator(hyper_params, poem_config)
+    with jsonlines.open('logs/generated_text.jsonl', mode='a') as writer:
+        writer.write({
+            "gen_text": gen_text,
+            "walltime": pd.Timestamp.now().isoformat(),
+            "global_step": int(estimator.get_variable_value('global_step')),
+            "hyper_params": hyper_params,
+            "poem_config": poem_config
+        })
+
+def run_forever(hyper_params = hyper_params, poem_config = poem_config):
+    while True:
+        train(hyper_params = hyper_params, poem_config = poem_config)
+        evaluate(hyper_params = hyper_params, poem_config = poem_config)
+        checkpoint(hyper_params = hyper_params, poem_config = poem_config)

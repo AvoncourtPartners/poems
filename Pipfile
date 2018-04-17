@@ -8,6 +8,7 @@ tensorflow = "*"
 numpy = "*"
 pandas = "*"
 watchdog = "*"
+jsonlines = "*"
 
 [dev-packages]
 mypy = "*"

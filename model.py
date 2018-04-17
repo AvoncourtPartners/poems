@@ -220,7 +220,7 @@ poem_config = {
 
 
 train_sets = {
-    "geothe": 'train_data/Faust_Geothe.txt',
+    "goethe": 'train_data/Faust_Goethe.txt',
     "pushkin": 'train_data/Pushkin.txt',
     "nerudo": 'train_data/Pablo_Nerudo.txt',
     "rilke": 'train_data/Rilke.txt',

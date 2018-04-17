@@ -9,6 +9,7 @@ numpy = "*"
 pandas = "*"
 watchdog = "*"
 jsonlines = "*"
+ipython = "*"
 
 [dev-packages]
 mypy = "*"

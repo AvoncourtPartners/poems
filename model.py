@@ -197,12 +197,21 @@ def create_estimator(hyper_params: dict, poem_config: dict)-> tf.estimator.Estim
     return estimator
 
 
-hyper_params = {
+h300 = {
         "embedding_dimention": 5,
         "seq_len": 128,
         "LSTM1_size": [300,300,300],
         "dropout": 0.2
     }
+
+hyper_params = h300
+
+h500 = {
+    'embedding_dimention': 10,
+    'seq_len': 128,
+    'LSTM1_size': [500, 500, 500, 500],
+    'dropout': 0.5
+}
 
 poem_config = {
     "use_gs": True,
@@ -236,10 +245,12 @@ def evaluate(hyper_params = hyper_params, poem_config = poem_config):
     estimator = create_estimator(hyper_params, poem_config)
     return estimator.evaluate(lambda: input_fn(char_gen, hyper_params).take(1000))
 
-def generate_text(seed_text: str, num_tokens: int, seed = None, hyper_params = hyper_params, poem_config = poem_config):
+def generate_text(seed_text: str, num_tokens: int, theta = 4.0, seed = None, hyper_params = hyper_params, poem_config = poem_config):
     "Generates num_tockens chars of text after initializing the LSTMs with the seed_text string"
     composed_list: t.List[str] = []
     processed_seed: t.List[bytes] = []
+    full_res_list = []
+
     estimator = create_estimator(hyper_params, poem_config)
 
     
@@ -251,25 +262,34 @@ def generate_text(seed_text: str, num_tokens: int, seed = None, hyper_params = h
         for c in composed_list:
             yield {"token": [c]}
 
+    def softmax(x):
+        ps = np.exp(x, dtype = np.float64)
+        ps /= np.sum(ps)
+        return ps
+
     pred_gen = estimator.predict(lambda: tf.data.Dataset.from_generator(char_gen_t3, output_types={"token": tf.string}))
     
     for _ in range(len(seed_text)-1):
-        processed_seed.append(next(pred_gen)['predicted_tokens'])
+        pred = next(pred_gen)
+        full_res_list.append(pred)
+        processed_seed.append(pred['predicted_tokens'])
 
     processed_seed_str = b''.join(processed_seed).decode()
 
     rs = np.random.RandomState(seed)
     for _ in range(num_tokens):
         pred = next(pred_gen)
-        probabilities = pred['probabilities']
+        logits = pred['logits']
+        probabilities = softmax(logits * theta)
         char_id = rs.choice(probabilities.shape[0],p=probabilities)
         #char_id = np.argmax(probabilities)
         char = char_list[char_id]
         composed_list.append(char)
+        full_res_list.append(pred)
 
     composed_str = ''.join(composed_list)
 
-    return (processed_seed_str, composed_str)
+    return (processed_seed_str, composed_str, full_res_list)
 
 def checkpoint():
     evaluate()

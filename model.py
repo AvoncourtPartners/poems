@@ -206,8 +206,9 @@ hyper_params = {
 
 poem_config = {
     "use_gs": True,
-    "train_set": "geothe",
+    "train_set": "pushkin",
 }
+
 
 train_sets = {
     "geothe": 'train_data/Faust_Geothe.txt',
@@ -227,23 +228,21 @@ def char_gen_t2():
 
 
 
-
-
-def train():
+def train(hyper_params = hyper_params, poem_config = poem_config):
     estimator = create_estimator(hyper_params, poem_config)
     return estimator.train(lambda: input_fn(char_gen, hyper_params).skip(1000))
 
-def evaluate():
+def evaluate(hyper_params = hyper_params, poem_config = poem_config):
     estimator = create_estimator(hyper_params, poem_config)
     return estimator.evaluate(lambda: input_fn(char_gen, hyper_params).take(1000))
 
-
-def generate_text(seed_text: str, num_tokens: int):
+def generate_text(seed_text: str, num_tokens: int, seed = None, hyper_params = hyper_params, poem_config = poem_config):
     "Generates num_tockens chars of text after initializing the LSTMs with the seed_text string"
     composed_list: t.List[str] = []
-    processed_seed: t.List[str] = []
-
+    processed_seed: t.List[bytes] = []
     estimator = create_estimator(hyper_params, poem_config)
+
+    
 
     def char_gen_t3():
         for c in seed_text:
@@ -259,10 +258,16 @@ def generate_text(seed_text: str, num_tokens: int):
 
     processed_seed_str = b''.join(processed_seed).decode()
 
+    rs = np.random.RandomState(seed)
     for _ in range(num_tokens):
-        composed_list.append(next(pred_gen)['predicted_tokens'])
+        pred = next(pred_gen)
+        probabilities = pred['probabilities']
+        char_id = rs.choice(probabilities.shape[0],p=probabilities)
+        #char_id = np.argmax(probabilities)
+        char = char_list[char_id]
+        composed_list.append(char)
 
-    composed_str = b''.join(composed_list).decode()
+    composed_str = ''.join(composed_list)
 
     return (processed_seed_str, composed_str)
 

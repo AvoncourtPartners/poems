@@ -25,6 +25,7 @@ def char_line_breaker(line: str)->t.List[str]:
 
 def token_generator(text_filename: Path, line_breaker:t.Callable[[str],t.List[str]]) -> t.Generator[str,None,None]:
     "Returns a generator that reads a utf-8 encoded text file line by line and yeilds tokens"
+    tf.logging.debug(f"Opening training data from: {text_filename}")
     fh = text_filename.open('r', encoding='utf-8')
     line = fh.readline()
     while line != '':
@@ -185,7 +186,7 @@ def create_estimator(hyper_params: dict, poem_config: dict)-> tf.estimator.Estim
         
         config=tf.estimator.RunConfig(
             save_checkpoints_steps = None,
-            save_checkpoints_secs  = 600,
+            save_checkpoints_secs  = 1200,
             log_step_count_steps   = 1000,
             save_summary_steps     = 100,
             keep_checkpoint_max    = 10,
@@ -234,24 +235,29 @@ seed_texts = {
     "rilke": 'der Sinn des Lebens',
 }
 
-def char_gen():
-    return token_generator(Path(train_sets[poem_config['train_set']]), char_line_breaker)
+def char_gen(poem_config = poem_config):
+    def gen():
+        return token_generator(Path(train_sets[poem_config['train_set']]), char_line_breaker)
+    return gen
 
-def char_gen_t1():
-    return itertools.chain.from_iterable(itertools.repeat(list("abcdefghijklmno"),10000))
+def char_gen_t1(poem_config = poem_config):
+    def gen():
+        return itertools.chain.from_iterable(itertools.repeat(list("abcdefghijklmno"),10000))
+    return gen
 
-def char_gen_t2():
-    return itertools.chain.from_iterable(itertools.repeat(list("pqrst"),10))
-
+def char_gen_t2(poem_config = poem_config):
+    def gen():
+        return itertools.chain.from_iterable(itertools.repeat(list("pqrst"),10))
+    return gen
 
 
 def train(hyper_params = hyper_params, poem_config = poem_config):
     estimator = create_estimator(hyper_params, poem_config)
-    return estimator.train(lambda: input_fn(char_gen, hyper_params).skip(1000))
+    return estimator.train(lambda: input_fn(char_gen(poem_config), hyper_params).skip(1000))
 
 def evaluate(hyper_params = hyper_params, poem_config = poem_config):
     estimator = create_estimator(hyper_params, poem_config)
-    return estimator.evaluate(lambda: input_fn(char_gen, hyper_params).take(1000))
+    return estimator.evaluate(lambda: input_fn(char_gen(poem_config), hyper_params).take(1000))
 
 def generate_text(
     seed_text: str, 

@@ -317,7 +317,10 @@ def checkpoint(hyper_params = hyper_params, poem_config = poem_config):
     print(gen_text.replace(char_list[0],"\t"))
 
     estimator = create_estimator(hyper_params, poem_config)
-    with jsonlines.open('logs/generated_text.jsonl', mode='a') as writer:
+
+    gen_text_log = Path('logs/generated_text.jsonl')
+    gen_text_log.parent.mkdir(parents=True, exist_ok=True)
+    with jsonlines.open(gen_text_log, mode='a') as writer:
         writer.write({
             "gen_text": gen_text,
             "walltime": pd.Timestamp.now().isoformat(),

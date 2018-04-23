@@ -25,7 +25,7 @@ def char_line_breaker(line: str)->t.List[str]:
 
 def token_generator(text_filename: Path, line_breaker:t.Callable[[str],t.List[str]]) -> t.Generator[str,None,None]:
     "Returns a generator that reads a utf-8 encoded text file line by line and yeilds tokens"
-    tf.logging.debug(f"Opening training data from: {text_filename}")
+    tf.logging.info(f"Opening training data from: {text_filename}")
     fh = text_filename.open('r', encoding='utf-8')
     line = fh.readline()
     while line != '':
@@ -215,6 +215,13 @@ h500 = {
     'dropout': 0.5
 }
 
+h2_1000 = {
+    'embedding_dimention': 5,
+    'seq_len': 128,
+    'LSTM1_size': [1000, 1000],
+    'dropout': 0.5
+}
+
 poem_config = {
     "use_gs": True,
     "train_set": "pushkin",
@@ -253,11 +260,11 @@ def char_gen_t2(poem_config = poem_config):
 
 def train(hyper_params = hyper_params, poem_config = poem_config):
     estimator = create_estimator(hyper_params, poem_config)
-    return estimator.train(lambda: input_fn(char_gen(poem_config), hyper_params).skip(1000))
+    return estimator.train(lambda: input_fn(char_gen(poem_config), hyper_params).skip(50))
 
 def evaluate(hyper_params = hyper_params, poem_config = poem_config):
     estimator = create_estimator(hyper_params, poem_config)
-    return estimator.evaluate(lambda: input_fn(char_gen(poem_config), hyper_params).take(1000))
+    return estimator.evaluate(lambda: input_fn(char_gen(poem_config), hyper_params).take(50))
 
 def generate_text(
     seed_text: str, 

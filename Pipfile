@@ -13,6 +13,7 @@ ipython = "*"
 
 [dev-packages]
 mypy = "*"
+rope = "*"
 
 [requires]
 python_version = "3.6"

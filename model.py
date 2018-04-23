@@ -49,7 +49,8 @@ def input_fn(
     tokens = tf.data.Dataset.from_generator(token_generator, output_types=tf.string, output_shapes=())
     one_token_window = tokens.apply(sliding_window_batch(2)).map(lambda w: ({"token":w[0]}, w[1]))
     window = one_token_window.batch(hyper_params['seq_len'])
-    return window
+    prefetch = window.prefetch(buffer_size=1)
+    return prefetch
 
 
 def create_feature_columns(hyper_params: dict):
@@ -260,11 +261,11 @@ def char_gen_t2(poem_config = poem_config):
 
 def train(hyper_params = hyper_params, poem_config = poem_config):
     estimator = create_estimator(hyper_params, poem_config)
-    return estimator.train(lambda: input_fn(char_gen(poem_config), hyper_params).skip(50))
+    return estimator.train(lambda: input_fn(char_gen(poem_config), hyper_params).skip(1000))
 
 def evaluate(hyper_params = hyper_params, poem_config = poem_config):
     estimator = create_estimator(hyper_params, poem_config)
-    return estimator.evaluate(lambda: input_fn(char_gen(poem_config), hyper_params).take(50))
+    return estimator.evaluate(lambda: input_fn(char_gen(poem_config), hyper_params).take(1000))
 
 def generate_text(
     seed_text: str, 

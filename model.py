@@ -8,6 +8,7 @@ import itertools
 from tensorflow.python.training.session_run_hook import SessionRunHook, SessionRunArgs
 from tensorflow.python.training import training_util
 from tensorflow.python.training.basic_session_run_hooks import SecondOrStepTimer
+
 import jsonlines
 
 tf.logging.set_verbosity(tf.logging.DEBUG)
@@ -61,7 +62,7 @@ def create_feature_columns(hyper_params: dict):
     embedding = tf.feature_column.embedding_column(cat,hyper_params['embedding_dimention'])
     return [embedding]
 
-def poems_moden_fn(
+def poems_model_fn(
         features: dict, # This is batch_features from input_fn
         labels: tf.Tensor,   # This is batch_labels from input_fn
         mode,     # An instance of tf.estimator.ModeKeys
@@ -182,7 +183,7 @@ def log_dir_name(hyper_params: dict, poem_config: dict)->str:
 
 def create_estimator(hyper_params: dict, poem_config: dict)-> tf.estimator.Estimator:
     estimator = tf.estimator.Estimator(
-        model_fn = poems_moden_fn, 
+        model_fn = poems_model_fn, 
         model_dir=log_dir_name(hyper_params, poem_config),
         
         config=tf.estimator.RunConfig(
@@ -259,9 +260,62 @@ def char_gen_t2(poem_config = poem_config):
     return gen
 
 
+# This hook collects profiling information that is used to display compute time in TensorBoard
+class MetadataHook(SessionRunHook):
+    def __init__ (self,
+                  save_steps=None,
+                  save_secs=None,
+                  output_dir=""):
+        self._output_tag = "step-{}"
+        self._output_dir = output_dir
+        self._timer = SecondOrStepTimer(
+            every_secs=save_secs, every_steps=save_steps)
+
+    def begin(self):
+        self._next_step = None
+        self._global_step_tensor = training_util.get_global_step()
+        self._writer = tf.summary.FileWriter (self._output_dir, tf.get_default_graph())
+
+        if self._global_step_tensor is None:
+            raise RuntimeError("Global step should be created to use ProfilerHook.")
+
+    def before_run(self, run_context):
+        self._request_summary = (
+            self._next_step is None or
+            self._timer.should_trigger_for_step(self._next_step)
+        )
+        requests = {"global_step": self._global_step_tensor}
+        opts = (tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
+            if self._request_summary else None)
+        return SessionRunArgs(requests, options=opts)
+
+    def after_run(self, run_context, run_values):
+        stale_global_step = run_values.results["global_step"]
+        global_step = stale_global_step + 1
+        if self._request_summary:
+            global_step = run_context.session.run(self._global_step_tensor)
+            self._writer.add_run_metadata(
+                run_values.run_metadata, self._output_tag.format(global_step))
+            self._writer.flush()
+        self._next_step = global_step + 1
+
+    def end(self, session):
+        self._writer.close()
+
+
 def train(hyper_params = hyper_params, poem_config = poem_config):
     estimator = create_estimator(hyper_params, poem_config)
-    return estimator.train(lambda: input_fn(char_gen(poem_config), hyper_params).skip(1000))
+    return estimator.train(
+        lambda: input_fn(char_gen(poem_config), hyper_params).skip(1000),
+        hooks=[tf.train.ProfilerHook(
+            save_steps=1000,
+            output_dir=log_dir_name(hyper_params, poem_config),
+            show_memory=True
+        ), MetadataHook(
+            save_steps=1000,
+            output_dir=log_dir_name(hyper_params, poem_config)
+        )]
+    )
 
 def evaluate(hyper_params = hyper_params, poem_config = poem_config):
     estimator = create_estimator(hyper_params, poem_config)

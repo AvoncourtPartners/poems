@@ -224,6 +224,14 @@ h2_1000 = {
     'dropout': 0.5
 }
 
+h1_1000 = {
+    'embedding_dimention': 5,
+    'seq_len': 128,
+    'LSTM1_size': [1000],
+    'dropout': 0.5
+}
+
+
 poem_config = {
     "use_gs": True,
     "train_set": "pushkin",

@@ -190,7 +190,7 @@ def create_estimator(hyper_params: dict, poem_config: dict)-> tf.estimator.Estim
             save_checkpoints_steps = None,
             save_checkpoints_secs  = 1200,
             log_step_count_steps   = 1000,
-            save_summary_steps     = 100,
+            save_summary_steps     = 1000,
             keep_checkpoint_max    = 10,
         ),
         params = { 
@@ -227,6 +227,7 @@ h2_1000 = {
 poem_config = {
     "use_gs": True,
     "train_set": "pushkin",
+    "profile": False
 }
 
 
@@ -305,9 +306,8 @@ class MetadataHook(SessionRunHook):
 
 def train(hyper_params = hyper_params, poem_config = poem_config):
     estimator = create_estimator(hyper_params, poem_config)
-    return estimator.train(
-        lambda: input_fn(char_gen(poem_config), hyper_params).skip(1000),
-        hooks=[tf.train.ProfilerHook(
+    
+    profile_hooks=[tf.train.ProfilerHook(
             save_steps=1000,
             output_dir=log_dir_name(hyper_params, poem_config),
             show_memory=True
@@ -315,6 +315,9 @@ def train(hyper_params = hyper_params, poem_config = poem_config):
             save_steps=1000,
             output_dir=log_dir_name(hyper_params, poem_config)
         )]
+    return estimator.train(
+        lambda: input_fn(char_gen(poem_config), hyper_params).skip(1000), 
+        hooks=profile_hooks if poem_config['profile'] else None  
     )
 
 def evaluate(hyper_params = hyper_params, poem_config = poem_config):

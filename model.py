@@ -190,7 +190,7 @@ def create_estimator(hyper_params: dict, poem_config: dict)-> tf.estimator.Estim
             save_checkpoints_steps = None,
             save_checkpoints_secs  = 1200,
             log_step_count_steps   = 1000,
-            save_summary_steps     = 1000,
+            save_summary_steps     = 100,
             keep_checkpoint_max    = 10,
         ),
         params = { 

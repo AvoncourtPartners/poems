@@ -243,6 +243,15 @@ h1_1000 = {
     "optimizer": 'adagrad'
 }
 
+h2_200 = {
+    'embedding_dimention': 5,
+    'seq_len': 128,
+    'LSTM1_size': [1000,200],
+    'dropout': 0.3,
+    "learn_rate": 0.1,
+    "optimizer": 'adagrad'
+}
+
 
 poem_config = {
     "use_gs": True,

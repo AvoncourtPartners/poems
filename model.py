@@ -13,12 +13,6 @@ import jsonlines
 
 tf.logging.set_verbosity(tf.logging.DEBUG)
 
-# Define the character to int mapping
-char_list  = [chr(0x0500)] # First character represens all out-of-vocabulary characters
-char_list += ['\n']
-char_list += list(map(chr,range(0x0020,0x007F))) # Basic Latin unicode block
-char_list += list(map(chr,range(0x00A0,0x00FF))) # Latin-1 Supplement unicode block
-char_list += list(map(chr,range(0x0400,0x04FF))) # Cyrillic unicode block
 
 def char_line_breaker(line: str)->t.List[str]:
     "Splits a line of text in to a list of characters"
@@ -54,10 +48,10 @@ def input_fn(
     return prefetch
 
 
-def create_feature_columns(hyper_params: dict):
+def create_feature_columns(hyper_params: dict, poem_config: dict):
     cat = tf.feature_column.categorical_column_with_vocabulary_list(
         key = "token",
-        vocabulary_list = char_list,
+        vocabulary_list = get_char_list(poem_config),
         default_value = 0)
     embedding = tf.feature_column.embedding_column(cat,hyper_params['embedding_dimention'])
     return [embedding]
@@ -69,6 +63,8 @@ def poems_model_fn(
         params: dict
     ) -> tf.estimator.EstimatorSpec:  # Additional configuration
     hyper_params = params['hyper_params']
+    poem_config  = params['poem_config']
+    char_list    = get_char_list(poem_config)
     elem_type = tf.float32
 
     input_t = tf.feature_column.input_layer(features,params['feature_columns'])
@@ -154,7 +150,14 @@ def poems_model_fn(
     # TRAIN
     ####################################################################################
 
-    optimizer = tf.train.AdagradOptimizer(learning_rate=0.1)
+    optimizer = None
+    if hyper_params["optimizer"] == 'adagrad':
+        optimizer = tf.train.AdagradOptimizer(learning_rate=hyper_params['learn_rate'])
+    
+    if hyper_params["optimizer"] == 'rmsprop':
+        optimizer = tf.train.RMSPropOptimizer(learning_rate=hyper_params['learn_rate'])
+    
+    
     train_op = optimizer.minimize(loss, global_step=tf.train.get_global_step())
 
     if mode == tf.estimator.ModeKeys.TRAIN:
@@ -194,8 +197,9 @@ def create_estimator(hyper_params: dict, poem_config: dict)-> tf.estimator.Estim
             keep_checkpoint_max    = 10,
         ),
         params = { 
-            "feature_columns" : create_feature_columns(hyper_params),
-            "hyper_params": hyper_params
+            "feature_columns" : create_feature_columns(hyper_params, poem_config),
+            "hyper_params": hyper_params,
+            "poem_config" : poem_config
         }
     )
     return estimator
@@ -205,7 +209,9 @@ h300 = {
         "embedding_dimention": 5,
         "seq_len": 128,
         "LSTM1_size": [300,300,300],
-        "dropout": 0.2
+        "dropout": 0.2,
+        "learn_rate": 0.1,
+        "optimizer": 'adagrad'
     }
 
 hyper_params = h300
@@ -214,21 +220,27 @@ h500 = {
     'embedding_dimention': 10,
     'seq_len': 128,
     'LSTM1_size': [500, 500, 500, 500],
-    'dropout': 0.5
+    'dropout': 0.5,
+    "learn_rate": 0.1,
+    "optimizer": 'adagrad'
 }
 
 h2_1000 = {
     'embedding_dimention': 5,
     'seq_len': 128,
     'LSTM1_size': [1000, 1000],
-    'dropout': 0.5
+    'dropout': 0.5,
+    "learn_rate": 0.1,
+    "optimizer": 'adagrad'
 }
 
 h1_1000 = {
     'embedding_dimention': 5,
     'seq_len': 128,
     'LSTM1_size': [1000],
-    'dropout': 0.5
+    'dropout': 0.5,
+    "learn_rate": 0.1,
+    "optimizer": 'adagrad'
 }
 
 
@@ -240,10 +252,22 @@ poem_config = {
 
 
 train_sets = {
-    "goethe": 'train_data/Faust_Goethe.txt',
-    "pushkin": 'train_data/Pushkin.txt',
-    "nerudo": 'train_data/Pablo_Nerudo.txt',
-    "rilke": 'train_data/Rilke.txt',
+    "goethe": {
+        'file_name': 'train_data/Faust_Goethe.txt',
+        'char_list': list("\n !'(),-.:;?ABCDEFGHIJKLMNOPRSTUVWZabcdefghijklmnoprstuvwzßäöü")
+    },
+    "pushkin": {
+        'file_name': 'train_data/Pushkin.txt',
+        'char_list': list('\t\n !"\'()*,-.1:;<>?[]acdeilmnoprstuv\xa0«»АБВГДЕЖЗИКЛМНОПРСТУФХЧШЭЯабвгдежзийклмнопрстуфхцчшщъыьэюяё–—…')
+    },
+    "nerudo": {
+        'file_name': 'train_data/Pablo_Nerudo.txt',
+        'char_list': list('\n !,.:?ACDEHLMNOPQRSTVYabcdefghijlmnopqrstuvxyzáéíñóú')
+    },
+    "rilke": {
+        'file_name': 'train_data/Rilke.txt',
+        'char_list': list('\n ,.ABDEGHILMSWabcdefghiklmnoprstuvwzßäöü')
+    }
 }
 
 seed_texts = {
@@ -253,9 +277,15 @@ seed_texts = {
     "rilke": 'der Sinn des Lebens',
 }
 
+def get_char_list(poem_config: dict) -> t.List[str]:
+    first = chr(0x0500) # First character represens all out-of-vocabulary characters
+    char_list = train_sets[poem_config['train_set']]['char_list']
+    return [first] + t.cast(t.List[str],char_list) # This cast is to silence a false mypy error
+
+
 def char_gen(poem_config = poem_config):
     def gen():
-        return token_generator(Path(train_sets[poem_config['train_set']]), char_line_breaker)
+        return token_generator(Path(train_sets[poem_config['train_set']]['file_name']), char_line_breaker)
     return gen
 
 def char_gen_t1(poem_config = poem_config):
@@ -343,7 +373,7 @@ def generate_text(
     composed_list: t.List[str] = []
     processed_seed: t.List[bytes] = []
     full_res_list = []
-
+    char_list = get_char_list(poem_config)
     estimator = create_estimator(hyper_params, poem_config)
 
     

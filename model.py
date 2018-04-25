@@ -424,7 +424,7 @@ def generate_text(
     return (processed_seed_str, composed_str, full_res_list)
 
 def checkpoint(hyper_params = hyper_params, poem_config = poem_config):
-
+    char_list = get_char_list(poem_config)
     _, gen_text, _ = generate_text(
         seed_text = seed_texts[poem_config['train_set']],
         num_tokens = 1000,

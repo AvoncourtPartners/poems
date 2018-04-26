@@ -276,6 +276,10 @@ train_sets = {
     "rilke": {
         'file_name': 'train_data/Rilke.txt',
         'char_list': list('\n ,.ABDEGHILMSWabcdefghiklmnoprstuvwzßäöü')
+    },
+    "shakespeare": {
+        'file_name': 'train_data/Shakespeare.txt',
+        'char_list': list(" etoahsrni\nldumy,wfcgIbp:.AvkT'EONRSLC;WUHMB?G!D-FYPKVjqxzJQZX")
     }
 }
 
@@ -284,6 +288,7 @@ seed_texts = {
     "pushkin": 'Жизнь она ведь',
     "nerudo": 'El significado de la vida',
     "rilke": 'der Sinn des Lebens',
+    "shakespeare": 'The meaning of life'
 }
 
 def get_char_list(poem_config: dict) -> t.List[str]:

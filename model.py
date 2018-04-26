@@ -252,6 +252,14 @@ h2_200 = {
     "optimizer": 'adagrad'
 }
 
+h3_512 = {
+    'embedding_dimention': 5,
+    'seq_len': 128,
+    'LSTM1_size': [512,512,512],
+    'dropout': 0.3,
+    "learn_rate": 0.1,
+    "optimizer": 'adagrad'
+}
 
 poem_config = {
     "use_gs": True,
@@ -279,7 +287,7 @@ train_sets = {
     },
     "shakespeare": {
         'file_name': 'train_data/Shakespeare.txt',
-        'char_list': list(" etoahsrni\nldumy,wfcgIbp:.AvkT'EONRSLC;WUHMB?G!D-FYPKVjqxzJQZX")
+        'char_list': list(" etoahsnri\nldumy,wfcgI:bpA.vTk'SEONRL;CHWMUBD?F!-GPYKVjqxJzQZX")
     }
 }
 

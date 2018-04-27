@@ -97,7 +97,7 @@ def poems_model_fn(
         initial_value = rnn_cell.zero_state(1, dtype = elem_type),
         trainable=False
     )
-
+    
     layer1_out_t, rnn_state_t = tf.nn.dynamic_rnn(
         rnn_cell, 
         input_r_t, 
@@ -105,10 +105,16 @@ def poems_model_fn(
         initial_state=rnn_prev_state,
         dtype = elem_type
     )
+
+    tf.summary.histogram("rnn_state_t",rnn_state_t)
+    tf.summary.histogram("layer1_out_t",layer1_out_t)
+
     
     state_update_op = rnn_prev_state.assign(rnn_state_t)
     with tf.control_dependencies([state_update_op]):
         logits_t = tf.layers.dense(layer1_out_t[0], len(char_list))
+    
+    tf.summary.histogram("logits_t",logits_t)
     
     predicted_token_ids = tf.argmax(logits_t,1)
     char_list_t = tf.constant(char_list, dtype = tf.string)
@@ -145,7 +151,6 @@ def poems_model_fn(
     perplexity = tf.exp(loss)
     tf.summary.scalar("accuracy", accuracy_op)
     tf.summary.scalar("perplexity", perplexity)
-    tf.summary.text("Predicted_tokens", join_tensor(predicted_tokens))
 
     if mode == tf.estimator.ModeKeys.EVAL:
         return tf.estimator.EstimatorSpec(

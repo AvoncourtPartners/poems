@@ -59,6 +59,13 @@ def create_feature_columns(hyper_params: dict, poem_config: dict):
         col = tf.feature_column.indicator_column(cat)
     return [col]
 
+
+def count_trainable_params() -> int:
+    tv = tf.trainable_variables()
+    shapes = map(lambda t:t.shape.as_list(),tv)
+    return sum(map(np.prod, shapes))
+    
+
 def poems_model_fn(
         features: dict, # This is batch_features from input_fn
         labels: tf.Tensor,   # This is batch_labels from input_fn
@@ -162,6 +169,10 @@ def poems_model_fn(
     
     
     train_op = optimizer.minimize(loss, global_step=tf.train.get_global_step())
+
+    num_of_trainable_params = count_trainable_params()
+    tf.logging.info("The number of trainable parameters is: {:,}".format(num_of_trainable_params))
+
 
     if mode == tf.estimator.ModeKeys.TRAIN:
         return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=train_op)

@@ -53,8 +53,11 @@ def create_feature_columns(hyper_params: dict, poem_config: dict):
         key = "token",
         vocabulary_list = get_char_list(poem_config),
         default_value = 0)
-    embedding = tf.feature_column.embedding_column(cat,hyper_params['embedding_dimention'])
-    return [embedding]
+    if hyper_params['embedding_dimention']:
+        col = tf.feature_column.embedding_column(cat,hyper_params['embedding_dimention'])
+    else:
+        col = tf.feature_column.indicator_column(cat)
+    return [col]
 
 def poems_model_fn(
         features: dict, # This is batch_features from input_fn

@@ -177,8 +177,8 @@ def poems_model_fn(
     grads_and_vars: t.List[t.Tuple[tf.Tensor,tf.Tensor]] = optimizer.compute_gradients(loss)
 
     for (grad, variable) in grads_and_vars:
-        tf.summary.histogram('gradient/' + grad.name, grad)
-        tf.summary.histogram('variable/' + variable.name, variable)
+        tf.summary.histogram(grad.name, grad)
+        tf.summary.histogram(variable.name, variable)
 
     if hyper_params['grad_clip']:
         clip_value_min = -hyper_params['grad_clip']

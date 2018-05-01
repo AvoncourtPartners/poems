@@ -409,7 +409,8 @@ def generate_text(
     theta = 4.0, 
     seed = None, 
     hyper_params = hyper_params, 
-    poem_config = poem_config):
+    poem_config = poem_config,
+    checkpoint_path = None):
     "Generates num_tockens chars of text after initializing the LSTMs with the seed_text string"
     composed_list: t.List[str] = []
     processed_seed: t.List[bytes] = []
@@ -431,7 +432,10 @@ def generate_text(
         ps /= np.sum(ps)
         return ps
 
-    pred_gen = estimator.predict(lambda: tf.data.Dataset.from_generator(char_gen_t3, output_types={"token": tf.string}))
+    pred_gen = estimator.predict(
+        lambda: tf.data.Dataset.from_generator(char_gen_t3, output_types={"token": tf.string}),
+        checkpoint_path = checkpoint_path
+        )
     
     for _ in range(len(seed_text)-1):
         pred = next(pred_gen)

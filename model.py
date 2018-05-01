@@ -95,7 +95,8 @@ def poems_model_fn(
     
     rnn_prev_state = tf.Variable(
         initial_value = rnn_cell.zero_state(1, dtype = elem_type),
-        trainable=False
+        trainable=False,
+        name='state_memory'
     )
     
     layer1_out_t, rnn_state_t = tf.nn.dynamic_rnn(
@@ -173,7 +174,21 @@ def poems_model_fn(
         optimizer = tf.train.RMSPropOptimizer(learning_rate=hyper_params['learn_rate'])
     
     
-    train_op = optimizer.minimize(loss, global_step=tf.train.get_global_step())
+    grads_and_vars: t.List[t.Tuple[tf.Tensor,tf.Tensor]] = optimizer.compute_gradients(loss)
+
+    for (grad, variable) in grads_and_vars:
+        tf.summary.histogram('gradient/' + grad.name, grad)
+        tf.summary.histogram('variable/' + variable.name, variable)
+
+    if hyper_params['grad_clip']:
+        clip_value_min = -hyper_params['grad_clip']
+        clip_value_max = hyper_params['grad_clip']
+        clipped_grads_and_vars = [(tf.clip_by_value(g, clip_value_min, clip_value_max), v) for (g,v) in grads_and_vars]
+    else:
+        clipped_grads_and_vars = grads_and_vars
+
+    train_op = optimizer.apply_gradients(clipped_grads_and_vars, global_step=tf.train.get_global_step())
+
 
     num_of_trainable_params = count_trainable_params()
     tf.logging.info("The number of trainable parameters is: {:,}".format(num_of_trainable_params))
@@ -230,7 +245,8 @@ h300 = {
         "LSTM1_size": [300,300,300],
         "dropout": 0.2,
         "learn_rate": 0.1,
-        "optimizer": 'adagrad'
+        "optimizer": 'adagrad',
+        "grad_clip" : None
     }
 
 hyper_params = h300
@@ -241,7 +257,8 @@ h500 = {
     'LSTM1_size': [500, 500, 500, 500],
     'dropout': 0.5,
     "learn_rate": 0.1,
-    "optimizer": 'adagrad'
+    "optimizer": 'adagrad',
+    "grad_clip" : None
 }
 
 h2_1000 = {
@@ -250,7 +267,8 @@ h2_1000 = {
     'LSTM1_size': [1000, 1000],
     'dropout': 0.5,
     "learn_rate": 0.1,
-    "optimizer": 'adagrad'
+    "optimizer": 'adagrad',
+    "grad_clip" : None
 }
 
 h1_1000 = {
@@ -259,7 +277,8 @@ h1_1000 = {
     'LSTM1_size': [1000],
     'dropout': 0.5,
     "learn_rate": 0.1,
-    "optimizer": 'adagrad'
+    "optimizer": 'adagrad',
+    "grad_clip" : None
 }
 
 h2_200 = {
@@ -268,7 +287,8 @@ h2_200 = {
     'LSTM1_size': [1000,200],
     'dropout': 0.3,
     "learn_rate": 0.1,
-    "optimizer": 'adagrad'
+    "optimizer": 'adagrad',
+    "grad_clip" : None
 }
 
 h3_512 = {
@@ -277,7 +297,17 @@ h3_512 = {
     'LSTM1_size': [512,512,512],
     'dropout': 0.3,
     "learn_rate": 0.1,
-    "optimizer": 'adagrad'
+    "optimizer": 'adagrad',
+    "grad_clip" : None
+}
+h3_512_k = {
+    'embedding_dimention': None,
+    'seq_len': 50,
+    'LSTM1_size': [512,512,512],
+    'dropout': 0.3,
+    "learn_rate": 0.002,
+    "optimizer": 'rmsprop',
+    "grad_clip" : 5
 }
 
 poem_config = {
@@ -488,3 +518,5 @@ def run_forever(hyper_params = hyper_params, poem_config = poem_config):
         train(hyper_params = hyper_params, poem_config = poem_config)
         evaluate(hyper_params = hyper_params, poem_config = poem_config)
         checkpoint(hyper_params = hyper_params, poem_config = poem_config)
+
+

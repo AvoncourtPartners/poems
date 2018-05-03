@@ -41,10 +41,27 @@ def input_fn(
         token_generator: t.Callable[[],t.Generator[str,None,None]], 
         hyper_params: dict
     ) -> tf.data.Dataset:
-    tokens = tf.data.Dataset.from_generator(token_generator, output_types=tf.string, output_shapes=())
-    one_token_window = tokens.apply(sliding_window_batch(2)).map(lambda w: ({"token":w[0]}, w[1]))
+    tokens = tf.data.Dataset.from_generator(token_generator, output_types=tf.string, output_shapes=(None,))
+    one_token_window = tokens.apply(sliding_window_batch(2)) 
+    # one_token_window value example: 
+    # [[b'F', b'd', b's'],
+    #  [b'i', b' ', b'e']]
     window = one_token_window.batch(hyper_params['seq_len'])
-    prefetch = window.prefetch(buffer_size=1)
+    window_transpose = window.map(lambda w: ({"token":tf.transpose(w[:,0,:])}, tf.transpose(w[:,1,:]))) 
+    # window_transpose value example:
+    # ({'token': [['F', 'i', 'r', 's', b]'t'],
+    #             ['d', ' ', 'u', 'p', '.'],
+    #             ['s', 'e', 'n', 't', '\n']]},
+    #  [['i', 'r', 's', 't', ' '],
+    #   [' ', 'u', 'p', '.', '\n'],
+    #   ['e', 'n', 't', '\n', 'H']])
+
+    packed_as_workaround = window_transpose.map(lambda w0, w1: (
+            {"token" : tf.reshape(w0["token"],[-1])},
+            tf.reshape(w1,[-1])
+        ))
+
+    prefetch = packed_as_workaround.prefetch(buffer_size=1)
     return prefetch
 
 
@@ -76,9 +93,16 @@ def poems_model_fn(
     poem_config  = params['poem_config']
     char_list    = get_char_list(poem_config)
     elem_type = tf.float32
+    batch_size   = params['batch_size']
+    seq_len      = params['seq_len']
 
-    input_t = tf.feature_column.input_layer(features,params['feature_columns'])
-    input_r_t = tf.expand_dims(input_t,0) # Add dimention to create a batch_size of 1 for dynamic_rnn
+    input_packed_t = tf.feature_column.input_layer(features,params['feature_columns'])
+    
+    # Work around the inability of feature_colums to support sequnces. Need to manually pack and unpack the tensor 
+    input_t = None
+    last_unpack_dimention = hyper_params['embedding_dimention'] if hyper_params['embedding_dimention'] else len(char_list)
+    input_t = tf.reshape(input_packed_t,(batch_size,seq_len,last_unpack_dimention))
+
 
     rnn_sublayer_cells = [
         tf.nn.rnn_cell.LSTMCell(
@@ -94,15 +118,15 @@ def poems_model_fn(
     rnn_cell = tf.nn.rnn_cell.MultiRNNCell(rnn_sublayer_cells_dropout, state_is_tuple=False)
     
     rnn_prev_state = tf.Variable(
-        initial_value = rnn_cell.zero_state(1, dtype = elem_type),
+        initial_value = rnn_cell.zero_state(batch_size, dtype = elem_type),
         trainable=False,
         name='state_memory'
     )
     
     layer1_out_t, rnn_state_t = tf.nn.dynamic_rnn(
         rnn_cell, 
-        input_r_t, 
-        sequence_length=[hyper_params['seq_len']], 
+        input_t, 
+        sequence_length=list(itertools.repeat(seq_len,batch_size)), 
         initial_state=rnn_prev_state,
         dtype = elem_type
     )
@@ -113,11 +137,11 @@ def poems_model_fn(
     
     state_update_op = rnn_prev_state.assign(rnn_state_t)
     with tf.control_dependencies([state_update_op]):
-        logits_t = tf.layers.dense(layer1_out_t[0], len(char_list))
+        logits_t = tf.layers.dense(layer1_out_t, len(char_list))
     
     tf.summary.histogram("logits_t",logits_t)
     
-    predicted_token_ids = tf.argmax(logits_t,1)
+    predicted_token_ids = tf.argmax(logits_t,-1) # -1 means the last dimention
     char_list_t = tf.constant(char_list, dtype = tf.string)
     predicted_tokens    = tf.gather(char_list_t, predicted_token_ids)
 
@@ -144,11 +168,12 @@ def poems_model_fn(
             tf.range(0,len(char_list), dtype = tf.int32)),
         default_value = 0
         )
+    labels_unpacked = tf.reshape(labels,(batch_size,seq_len))
 
-    label_ids = char_map_t.lookup(labels)
+    label_ids = char_map_t.lookup(labels_unpacked)
 
     loss = tf.losses.sparse_softmax_cross_entropy(labels=label_ids, logits=logits_t)
-    accuracy, accuracy_op = tf.metrics.accuracy(labels=labels, predictions = predicted_tokens, name='acc_op')
+    accuracy, accuracy_op = tf.metrics.accuracy(labels=labels_unpacked, predictions = predicted_tokens, name='acc_op')
     perplexity = tf.exp(loss)
     tf.summary.scalar("accuracy", accuracy_op)
     tf.summary.scalar("perplexity", perplexity)
@@ -218,7 +243,7 @@ def log_dir_name(hyper_params: dict, poem_config: dict)->str:
     return path
 
 
-def create_estimator(hyper_params: dict, poem_config: dict)-> tf.estimator.Estimator:
+def create_estimator(hyper_params: dict, poem_config: dict, predict: bool)-> tf.estimator.Estimator:
     estimator = tf.estimator.Estimator(
         model_fn = poems_model_fn, 
         model_dir=log_dir_name(hyper_params, poem_config),
@@ -233,7 +258,9 @@ def create_estimator(hyper_params: dict, poem_config: dict)-> tf.estimator.Estim
         params = { 
             "feature_columns" : create_feature_columns(hyper_params, poem_config),
             "hyper_params": hyper_params,
-            "poem_config" : poem_config
+            "poem_config" : poem_config,
+            "batch_size"  : 1 if predict else hyper_params['batch_size'],
+            "seq_len"     : 1 if predict else hyper_params['seq_len']
         }
     )
     return estimator
@@ -246,7 +273,8 @@ h300 = {
         "dropout": 0.2,
         "learn_rate": 0.1,
         "optimizer": 'adagrad',
-        "grad_clip" : None
+        "grad_clip" : None,
+        "batch_size": 1
     }
 
 hyper_params = h300
@@ -258,7 +286,8 @@ h500 = {
     'dropout': 0.5,
     "learn_rate": 0.1,
     "optimizer": 'adagrad',
-    "grad_clip" : None
+    "grad_clip" : None,
+    "batch_size": 1
 }
 
 h2_1000 = {
@@ -268,7 +297,8 @@ h2_1000 = {
     'dropout': 0.5,
     "learn_rate": 0.1,
     "optimizer": 'adagrad',
-    "grad_clip" : None
+    "grad_clip" : None,
+    "batch_size": 1
 }
 
 h1_1000 = {
@@ -278,7 +308,8 @@ h1_1000 = {
     'dropout': 0.5,
     "learn_rate": 0.1,
     "optimizer": 'adagrad',
-    "grad_clip" : None
+    "grad_clip" : None,
+    "batch_size": 1
 }
 
 h2_200 = {
@@ -288,7 +319,8 @@ h2_200 = {
     'dropout': 0.3,
     "learn_rate": 0.1,
     "optimizer": 'adagrad',
-    "grad_clip" : None
+    "grad_clip" : None,
+    "batch_size": 1
 }
 
 h3_512 = {
@@ -298,7 +330,8 @@ h3_512 = {
     'dropout': 0.3,
     "learn_rate": 0.1,
     "optimizer": 'adagrad',
-    "grad_clip" : None
+    "grad_clip" : None,
+    "batch_size": 1
 }
 h3_512_k = {
     'embedding_dimention': None,
@@ -307,7 +340,8 @@ h3_512_k = {
     'dropout': 0.3,
     "learn_rate": 0.002,
     "optimizer": 'rmsprop',
-    "grad_clip" : 5
+    "grad_clip" : 5,
+    "batch_size": 50
 }
 
 poem_config = {
@@ -354,9 +388,17 @@ def get_char_list(poem_config: dict) -> t.List[str]:
     return [first] + t.cast(t.List[str],char_list) # This cast is to silence a false mypy error
 
 
-def char_gen(poem_config = poem_config):
+def char_gen(hyper_params = hyper_params, poem_config = poem_config):
     def gen():
-        return token_generator(Path(train_sets[poem_config['train_set']]['file_name']), char_line_breaker)
+        token_gen = token_generator(Path(train_sets[poem_config['train_set']]['file_name']), char_line_breaker)
+        all_tokens = np.array(list(token_gen))
+        # discard the tail that can not be reshaped to batch sized tensor
+        batch_size = hyper_params['batch_size']
+        all_tokens_cut = all_tokens[:all_tokens.size-(all_tokens.size % batch_size)]
+        batches = all_tokens_cut.reshape((batch_size, -1))
+        for i in range(batches.shape[1]):
+            yield batches[:,i]
+        
     return gen
 
 def char_gen_t1(poem_config = poem_config):
@@ -414,7 +456,7 @@ class MetadataHook(SessionRunHook):
 
 
 def train(hyper_params = hyper_params, poem_config = poem_config):
-    estimator = create_estimator(hyper_params, poem_config)
+    estimator = create_estimator(hyper_params, poem_config, predict=False)
     
     profile_hooks=[tf.train.ProfilerHook(
             save_steps=1000,
@@ -425,13 +467,13 @@ def train(hyper_params = hyper_params, poem_config = poem_config):
             output_dir=log_dir_name(hyper_params, poem_config)
         )]
     return estimator.train(
-        lambda: input_fn(char_gen(poem_config), hyper_params).skip(1000), 
+        lambda: input_fn(char_gen(hyper_params, poem_config), hyper_params).skip(1000), 
         hooks=profile_hooks if poem_config['profile'] else None  
     )
 
 def evaluate(hyper_params = hyper_params, poem_config = poem_config):
-    estimator = create_estimator(hyper_params, poem_config)
-    return estimator.evaluate(lambda: input_fn(char_gen(poem_config), hyper_params).take(1000))
+    estimator = create_estimator(hyper_params, poem_config, predict=False)
+    return estimator.evaluate(lambda: input_fn(char_gen(hyper_params, poem_config), hyper_params).take(1000))
 
 def generate_text(
     seed_text: str, 
@@ -441,21 +483,21 @@ def generate_text(
     hyper_params = hyper_params, 
     poem_config = poem_config,
     checkpoint_path = None):
-    "Generates num_tockens chars of text after initializing the LSTMs with the seed_text string"
+    "Generates num_tokens chars of text after initializing the LSTMs with the seed_text string"
     composed_list: t.List[str] = []
     processed_seed: t.List[bytes] = []
     full_res_list = []
     char_list = get_char_list(poem_config)
-    estimator = create_estimator(hyper_params, poem_config)
+    estimator = create_estimator(hyper_params, poem_config,predict=True)
 
     
 
     def char_gen_t3():
         for c in seed_text:
-            yield {"token": [c]}
+            yield {"token": [[c]]}
 
         for c in composed_list:
-            yield {"token": [c]}
+            yield {"token": [[c]]}
 
     def softmax(x):
         ps = np.exp(x, dtype = np.float64)
@@ -470,14 +512,14 @@ def generate_text(
     for _ in range(len(seed_text)-1):
         pred = next(pred_gen)
         full_res_list.append(pred)
-        processed_seed.append(pred['predicted_tokens'])
+        processed_seed.append(pred['predicted_tokens'][0])
 
     processed_seed_str = b''.join(processed_seed).decode()
 
     rs = np.random.RandomState(seed)
     for _ in range(num_tokens):
         pred = next(pred_gen)
-        logits = pred['logits']
+        logits = pred['logits'][0]
         probabilities = softmax(logits * theta)
         char_id = rs.choice(probabilities.shape[0],p=probabilities)
         #char_id = np.argmax(probabilities)
@@ -500,7 +542,7 @@ def checkpoint(hyper_params = hyper_params, poem_config = poem_config):
     print("Generated text:")
     print(gen_text.replace(char_list[0],"\t"))
 
-    estimator = create_estimator(hyper_params, poem_config)
+    estimator = create_estimator(hyper_params, poem_config, predict=True)
 
     gen_text_log = Path('logs/generated_text.jsonl')
     gen_text_log.parent.mkdir(parents=True, exist_ok=True)
@@ -519,4 +561,4 @@ def run_forever(hyper_params = hyper_params, poem_config = poem_config):
         evaluate(hyper_params = hyper_params, poem_config = poem_config)
         checkpoint(hyper_params = hyper_params, poem_config = poem_config)
 
-
+#checkpoint({**h1_1000, "batch_size":1, "seq_len": 32}, {**poem_config,'use_gs':False, 'train_set':'shakespeare'})

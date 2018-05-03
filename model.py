@@ -394,7 +394,8 @@ def char_gen(hyper_params = hyper_params, poem_config = poem_config):
         all_tokens = np.array(list(token_gen))
         # discard the tail that can not be reshaped to batch sized tensor
         batch_size = hyper_params['batch_size']
-        all_tokens_cut = all_tokens[:all_tokens.size-(all_tokens.size % batch_size)]
+        seq_len    = hyper_params['seq_len']
+        all_tokens_cut = all_tokens[:all_tokens.size-(all_tokens.size % (batch_size * seq_len))]
         batches = all_tokens_cut.reshape((batch_size, -1))
         for i in range(batches.shape[1]):
             yield batches[:,i]

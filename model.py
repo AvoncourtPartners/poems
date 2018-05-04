@@ -507,14 +507,14 @@ def train(hyper_params = hyper_params, poem_config = poem_config):
         hooks.append(profile_hooks)
     
     return estimator.train(
-        lambda: input_fn(char_gen(hyper_params, poem_config,validation=False), hyper_params).skip(1000), 
+        lambda: input_fn(char_gen(hyper_params, poem_config,validation=False), hyper_params), 
         hooks = hooks  
     )
 
 def evaluate(hyper_params = hyper_params, poem_config = poem_config):
     estimator = create_estimator(hyper_params, poem_config)
     return estimator.evaluate(
-        lambda: input_fn(char_gen(hyper_params, poem_config, validation=True), hyper_params).take(1000),
+        lambda: input_fn(char_gen(hyper_params, poem_config, validation=True), hyper_params),
         hooks = [StateSessionRunHook()]    
     )
 
@@ -536,11 +536,12 @@ def generate_text(
     
 
     def char_gen_t3():
+
         for c in seed_text:
-            yield {"token": [[c]]}
+            yield [[c]]
 
         for c in composed_list:
-            yield {"token": [[c]]}
+            yield [[c]]
 
     def softmax(x):
         ps = np.exp(x, dtype = np.float64)
@@ -548,8 +549,13 @@ def generate_text(
         return ps
 
     pred_gen = estimator.predict(
-        lambda: tf.data.Dataset.from_generator(char_gen_t3, output_types={"token": tf.string}),
-        checkpoint_path = checkpoint_path
+        lambda: tf.data.Dataset.from_generator(char_gen_t3, output_types=tf.string).map(lambda c: {
+            "token": c,
+            "batch_size": tf.constant(1, dtype=tf.int32),
+            "seq_len":    tf.constant(1, dtype=tf.int32)
+        }),
+        checkpoint_path = checkpoint_path,
+        hooks=[StateSessionRunHook()]
         )
     
     for _ in range(len(seed_text)-1):

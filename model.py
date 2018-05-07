@@ -370,6 +370,17 @@ h3_512_k = {
     "batch_size": 50
 }
 
+h3_1024 = {
+    'embedding_dimention': None,
+    'seq_len': 50,
+    'LSTM1_size': [1024,1024,1024],
+    'dropout': 0.3,
+    "learn_rate": 0.002,
+    "optimizer": 'rmsprop',
+    "grad_clip" : 5,
+    "batch_size": 50
+}
+
 poem_config = {
     "use_gs": True,
     "train_set": "pushkin",

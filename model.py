@@ -412,11 +412,11 @@ train_sets = {
 }
 
 seed_texts = {
-    "goethe": 'der Sinn des Lebens',
-    "pushkin": 'Жизнь она ведь',
-    "nerudo": 'El significado de la vida',
-    "rilke": 'der Sinn des Lebens',
-    "shakespeare": 'The meaning of life'
+    "goethe": 'der Sinn des Lebens\n',
+    "pushkin": 'Жизнь она ведь\n',
+    "nerudo": 'El significado de la vida\n',
+    "rilke": 'der Sinn des Lebens\n',
+    "shakespeare": 'The meaning of life\n'
 }
 
 def get_char_list(poem_config: dict) -> t.List[str]:
@@ -593,9 +593,9 @@ def generate_text(
 
 def checkpoint(hyper_params = hyper_params, poem_config = poem_config):
     char_list = get_char_list(poem_config)
-    _, gen_text, _ = generate_text(
+    processed_seed_text, gen_text, _ = generate_text(
         seed_text = seed_texts[poem_config['train_set']],
-        num_tokens = 1000,
+        num_tokens = 10000,
         hyper_params = hyper_params, 
         poem_config = poem_config)
     
@@ -609,6 +609,7 @@ def checkpoint(hyper_params = hyper_params, poem_config = poem_config):
     with jsonlines.open(gen_text_log, mode='a') as writer:
         writer.write({
             "gen_text": gen_text,
+            "processed_seed_text": processed_seed_text,
             "walltime": pd.Timestamp.now().isoformat(),
             "global_step": int(estimator.get_variable_value('global_step')),
             "hyper_params": hyper_params,
